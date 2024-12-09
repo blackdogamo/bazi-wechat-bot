@@ -1,7 +1,7 @@
 {
   "channel_type": "wx",
   "model": "",
-  "open_ai_api_key": "sk-proj-XHZaYRTUbSNNwZ9ZBc_fdOWl5s2eWU_RNgSMYfTyJMaJMIkGWUej3BwA",
+  "open_ai_api_key": "sk-proj-_fdOWl5s2eWU_RNgSMYfTyJMaJMIkGWUej3BwA",
   "claude_api_key": "YOUR API KEY",
   "text_to_image": "dall-e-2",
   "voice_to_text": "openai",
@@ -9,12 +9,12 @@
   "proxy": "",
   "hot_reload": false,
   "single_chat_prefix": [
-    "bot",
-    "@bot"
+    "机器人",
+    "@机器人"
   ],
-  "single_chat_reply_prefix": "[bot] ",
+  "single_chat_reply_prefix": "[机器人] ",
   "group_chat_prefix": [
-    "@bot"
+    "@机器人"
   ],
   "group_name_white_list": [
     "☯️逍遥易·八字实战预测群⚛️",
@@ -34,9 +34,5 @@
   "subscribe_msg": "感谢您的关注！\n这里是AI智能助手，可以自由对话。\n支持语音对话。\n支持图片输入。\n支持图片输出，画字开头的消息将按要求创作图片。\n支持tool、角色扮演和文字冒险等丰富的插件。\n输入{trigger_prefix}#help 查看详细指令。",
   "use_linkai": false,
   "linkai_api_key": "",
-  "linkai_app_code": "",
-  "plugins": {
-    "enabled": true,
-    "plugins": ["bazi_plugin"]
-  }
+  "linkai_app_code": ""
 }
