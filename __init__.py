@@ -1,180 +1,97 @@
-import os
-import sys
-from bridge.context import Context
+# plugins/bazi_plugin/__init__.py
+
+import re
 from bridge.reply import Reply, ReplyType
-from bridge import bridge
-from plugins import *
-from bridge import context
-from channel.wechat.wechat_channel import WechatChannel
-import time
-from bridge.context import ContextType
+from bridge.context import Context, ContextType
 
+# 从 bazi_plugin.py 中导入你的两个关键函数
+# 假设 bazi_plugin.py 中有 process_bazi_data(riqi, typetype) 和 显示命主关键信息(data) 函数。
+from .bazi_plugin import process_bazi_data, 显示命主关键信息
 
-# 全局变量（测试用）
-LAST_INPUT = None
-LAST_USER_ID = None
+__plugin_name__ = "BaziPlugin"
+__plugin_usage__ = """
+插件名称：BaziPlugin
+用法：
+在群聊中 @机器人 后输入：
+1. 公历生日输入法：
+   "@机器人 男 1990 12 06 22"
+   （格式：性别 年 月 日 时）
+2. 四柱八字输入法：
+   "@机器人 女 甲 子 丙 寅 丁 丑 戌 亥"
+   （格式：性别 年干 年支 月干 月支 日干 日支 时干 时支）
+插件将根据以上输入调用八字计算逻辑并回复分析结果。
+"""
 
-# bazi_plugin.py的路径 (请根据你的实际路径)
-plugin_path = os.path.dirname(__file__)
-bazi_plugin_path = os.path.join(plugin_path, "bazi_plugin.py")
-print("bazi_plugin_path:", bazi_plugin_path)
-
-def judge_input_type_and_extract_info(input_text):
+def on_handle_message(context: Context):
     """
-    根据用户的输入文本来判断输入类型（公历输入法 or 四柱八字输入法），
-    并提取出相关的参数（性别、年、月、日、时或干支信息）。
-    
-    输入格式示例：
-    公历生日输入法: "@机器人 男 1990 12 06 22"
-    四柱八字输入法: "@机器人 女 甲 子 丙 寅 丁 丑 戌 亥"
-
-    返回: 一个字典infos，可能包含:
-    - gender: "男" 或 "女"
-    - year, month, day, hour (如果是公历输入法)
-    - year_gan, year_zhi, month_gan, month_zhi, day_gan, day_zhi, hour_gan, hour_zhi (如果是四柱八字输入法)
-    - gongli_input: True/False (是否为公历输入法)
-    - sizhubazi_input: True/False (是否为四柱八字输入法)
-    - leap_month: True/False (是否为闰月，这里默认False)
+    当收到消息时，插件会调用此函数。
+    如果消息符合八字格式则直接用 process_bazi_data() 和 显示命主关键信息() 返回结果。
+    如果不符合，则返回None让消息进入后续环节（例如ChatGPT回答）。
     """
 
-    # 清理输入文本，去除多余空格、中文空格
-    cleaned_text = input_text.strip().replace("　", " ").replace("  ", " ")
-    parts = cleaned_text.split(" ")
+    # 只处理文本消息
+    if context.type != ContextType.TEXT:
+        return None
 
-    # 判断输入的parts个数：
-    # 公历输入法示例：["@机器人", "男", "1990", "12", "06", "22"]  共6段
-    # 四柱八字输入法示例：["@机器人", "女", "甲", "子", "丙", "寅", "丁", "丑", "戌", "亥"] 共10段
+    msg = context.content.strip()
+    # 根据你的实际机器人昵称进行调整，这里假设你的机器人昵称是"@机器人"
+    # 如果群聊中发信息会自动附上"@机器人", 我们需要把开头的这段给去掉
+    msg = re.sub(r'^@机器人\s+', '', msg)
 
-    if len(parts) == 6:    # ⭐️ 公历输入法
-        
-        # parts: ["@机器人", "男", "1990", "12", "06", "22"]
-        gender = parts[1]
-        year = parts[2]
-        month = parts[3]
-        day = parts[4]
-        hour = parts[5]
+    typetype = None
+    riqi = None
 
-        # 尝试将年月日时转为整数
-        try:
-            year = int(year)
-            month = int(month)
-            day = int(day)
-            hour = int(hour)
-        except:
-            # 如果无法转换为整数，说明用户输入有误
-            return None
+    # 公历输入法匹配规则：性别(男|女) 年(4位) 月(1-2位) 日(1-2位) 时(1-2位)
+    gl_pattern = r'^(男|女)\s+(\d{4})\s+(\d{1,2})\s+(\d{1,2})\s+(\d{1,2})$'
 
-        # 公历输入法下参数设定
-        gongli_input = True          # 是公历输入
-        sizhubazi_input = False      # 不是四柱八字输入
-        leap_month = False           # 默认没有闰月的概念
+    # 四柱八字输入法匹配（大致匹配，不同干支可根据具体情况微调）
+    # 假设干支都是中文汉字（天干地支为一字，如“甲”、“子”、“丙”、“寅”...）
+    # 格式：性别 后接8个汉字（每两个字组合为一个干支）
+    # 例如：女 甲 子 丙 寅 丁 丑 戌 亥
+    # 为简单起见，用中文字符范围匹配：
+    sz_pattern = r'^(男|女)\s+([\u4e00-\u9fa5])+\s+([\u4e00-\u9fa5])+\s+([\u4e00-\u9fa5])+\s+([\u4e00-\u9fa5])+\s+([\u4e00-\u9fa5])+\s+([\u4e00-\u9fa5])+\s+([\u4e00-\u9fa5])+$'
 
-        return {
+    gl_match = re.match(gl_pattern, msg)
+    sz_match = re.match(sz_pattern, msg)
+
+    if gl_match:
+        # 公历输入法
+        typetype = 1
+        gender = gl_match.group(1)
+        year = gl_match.group(2)
+        month = gl_match.group(3)
+        day = gl_match.group(4)
+        hour = gl_match.group(5)
+        riqi = {
             "gender": gender,
             "year": year,
             "month": month,
             "day": day,
-            "hour": hour,
-            "gongli_input": gongli_input,
-            "sizhubazi_input": sizhubazi_input,
-            "leap_month": leap_month
+            "hour": hour
         }
 
-    elif len(parts) == 10:      # ⭐️ 四柱八字输入法
-        
-        # parts: ["@机器人", "女", "甲", "子", "丙", "寅", "丁", "丑", "戌", "亥"]
-        gender = parts[1]
-        year_gan = parts[2]
-        year_zhi = parts[3]
-        month_gan = parts[4]
-        month_zhi = parts[5]
-        day_gan = parts[6]
-        day_zhi = parts[7]
-        hour_gan = parts[8]
-        hour_zhi = parts[9]
-
-        # 四柱八字输入法下参数设定
-        gongli_input = False         # 不是公历输入
-        sizhubazi_input = True       # 是四柱八字输入
-        leap_month = False           # 默认无闰月，后续可根据需要调整
-
-        return {
+    elif sz_match:
+        # 四柱八字输入法
+        typetype = 2
+        parts = msg.split()
+        gender = parts[0]
+        # 余下8个字符即为干支信息
+        ganzhi = parts[1:]
+        riqi = {
             "gender": gender,
-            "year_gan": year_gan,
-            "year_zhi": year_zhi,
-            "month_gan": month_gan,
-            "month_zhi": month_zhi,
-            "day_gan": day_gan,
-            "day_zhi": day_zhi,
-            "hour_gan": hour_gan,
-            "hour_zhi": hour_zhi,
-            "gongli_input": gongli_input,
-            "sizhubazi_input": sizhubazi_input,
-            "leap_month": leap_month
+            "ganzhi": ganzhi
         }
 
-    else:
-        # 未知格式，不处理
+    # 如果既不匹配公历也不匹配四柱八字，则不处理
+    if typetype is None:
         return None
 
+    # 调用你的八字处理逻辑
+    # process_bazi_data会处理riqi和typetype，并返回一个数据结构供显示命主关键信息函数使用
+    processed_data = process_bazi_data(riqi, typetype)
 
-def make_reply(infos):
-    from plugins.bazi_plugin.bazi_plugin import process_bazi_data, 显示命主关键信息
-    # 调用process_bazi_data执行分析(此函数是你自己写的入口函数)
-    process_bazi_data(
-        sizhubazi_input=infos["sizhubazi_input"],
-        gongli_input=infos["gongli_input"],
-        leap_month=infos["leap_month"],
-        gender=infos["gender"],
-        year=infos.get("year"),
-        month=infos.get("month"),
-        day=infos.get("day"),
-        hour=infos.get("hour"),
-        year_gan=infos.get("year_gan"),
-        year_zhi=infos.get("year_zhi"),
-        month_gan=infos.get("month_gan"),
-        month_zhi=infos.get("month_zhi"),
-        day_gan=infos.get("day_gan"),
-        day_zhi=infos.get("day_zhi"),
-        hour_gan=infos.get("hour_gan"),
-        hour_zhi=infos.get("hour_zhi")
-    )
+    # 调用 显示命主关键信息 函数得到最终输出文本（假设这个函数返回字符串）
+    final_result = 显示命主关键信息(processed_data)
 
-    # 然后调用显示命主关键信息获取最终结果字符串
-    result = 显示命主关键信息()
-    return result
-
-
-
-class BaziPlugin(Plugin):
-    def __init__(self):
-        super().__init__()
-        print("[BaziPlugin] inited")
-
-    def on_message(self, context: Context):
-        """
-        当接收到一条微信群内的消息且@到本机器人时，会执行此函数。
-        我们从消息中提取出用户输入的内容，判断输入类型，分析八字，然后返回结果给微信群。
-        """
-        if context.type == ContextType.GROUP and context.is_at:
-            text = context.content.strip()
-            # 文本格式一般是"@机器人 ...",我们取出@机器人后面的内容  🚨🚨🚨🚨🚨
-            parts = text.split(" ", 1)
-            if len(parts) < 2:
-                return
-            user_input = parts[1].strip()  # 获取实际的指令部分（去掉@机器人）
-
-            infos = judge_input_type_and_extract_info(user_input)
-            if infos is None:
-                # 如果无法解析输入，就不回应
-                return
-
-            # 调用make_reply生成回复文本
-            reply_text = make_reply(infos)
-
-            # 使用框架提供的Reply对象返回消息
-            reply = Reply(ReplyType.TEXT, reply_text)
-            return reply
-
-# 注册插件
-plugin = BaziPlugin()
+    # 返回Reply，让程序直接发送该文本给用户
+    return Reply(ReplyType.TEXT, final_result)
